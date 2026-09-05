@@ -1,0 +1,16 @@
+{
+  "name": "vr-360-maps-explorer-server",
+  "version": "1.0.0",
+  "description": "Backend proxy for the VR 360 Street View Explorer (hides the Google Maps API key from the client).",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "node-fetch": "^2.7.0"
+  }
+}

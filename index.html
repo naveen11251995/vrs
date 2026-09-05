@@ -40,12 +40,15 @@
       <button id="checkStreetView">Check Street View coverage here</button>
       <img id="streetViewPreview" alt="" />
       <p class="hint">
-        This 2D preview uses your API key directly in the browser (fine for a
-        key restricted to your GitHub Pages domain). It can't be piped into
-        the VR sphere from a static site — Google's image APIs don't send the
-        CORS headers WebGL requires for that. See the README for the small
-        optional backend that enables live Street View inside the headset.
+        This 2D preview uses your API key directly in the browser. It can't
+        be piped into the VR sphere on its own — Google's image endpoints
+        don't send the CORS headers WebGL needs for that.
       </p>
+
+      <label>Backend proxy URL (see README to deploy one free)
+        <input id="proxyUrl" type="text" placeholder="https://your-app.onrender.com" />
+      </label>
+      <button id="loadIntoVR">Load this Street View into the VR sphere</button>
     </details>
 
     <div id="controls-help">

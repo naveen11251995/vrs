@@ -59,11 +59,20 @@ let currentPanoramaIndex = 0;
 
 function applyPanorama(index) {
   const pano = panoramas[index];
+  currentPanoramaIndex = index;
+
+  if (pano.texture) {
+    // Already-built texture (e.g. a stitched Street View canvas) — apply directly.
+    sphereMaterial.map = pano.texture;
+    sphereMaterial.needsUpdate = true;
+    setStatus(`Viewing: ${pano.name}`);
+    return;
+  }
+
   textureLoader.load(pano.url, (texture) => {
     texture.colorSpace = THREE.SRGBColorSpace;
     sphereMaterial.map = texture;
     sphereMaterial.needsUpdate = true;
-    currentPanoramaIndex = index;
     setStatus(`Viewing: ${pano.name}`);
   });
 }
@@ -208,6 +217,90 @@ document.getElementById('checkStreetView').addEventListener('click', async () =>
         `(2D preview only — see the hint below).`
     );
   });
+});
+
+// ---------------------------------------------------------------------------
+// Loading real Street View INTO the VR sphere. This requires the small
+// backend proxy (see README) — it re-serves Google's images from the same
+// origin as the proxy, with CORS headers attached, which is what lets
+// WebGL treat the stitched result as a valid texture instead of tainting
+// the canvas.
+// ---------------------------------------------------------------------------
+
+function loadProxyImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+async function fetchStreetViewComposite(proxyBase, lat, lng) {
+  const headings = [0, 60, 120, 180, 240, 300];
+  const rows = [40, 0, -40];
+  const tileW = 512;
+  const tileH = 512;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = tileW * headings.length;
+  canvas.height = tileH * rows.length;
+  const ctx = canvas.getContext('2d');
+
+  for (let r = 0; r < rows.length; r++) {
+    const pitch = rows[r];
+    for (let c = 0; c < headings.length; c++) {
+      const heading = headings[c];
+      const url =
+        `${proxyBase}/api/streetview-tile?lat=${lat}&lng=${lng}` +
+        `&heading=${heading}&pitch=${pitch}&fov=70&size=${tileW}x${tileH}`;
+      // eslint-disable-next-line no-await-in-loop
+      const img = await loadProxyImage(url);
+      ctx.drawImage(img, c * tileW, r * tileH, tileW, tileH);
+    }
+  }
+  return canvas;
+}
+
+document.getElementById('loadIntoVR').addEventListener('click', async () => {
+  const proxyBase = document.getElementById('proxyUrl').value.trim().replace(/\/$/, '');
+  const lat = parseFloat(document.getElementById('lat').value);
+  const lng = parseFloat(document.getElementById('lng').value);
+
+  if (!proxyBase) {
+    setStatus('Paste your deployed backend proxy URL first (see README).');
+    return;
+  }
+  if (Number.isNaN(lat) || Number.isNaN(lng)) {
+    setStatus('Enter valid numeric coordinates.');
+    return;
+  }
+
+  try {
+    setStatus('Checking coverage via proxy...');
+    const metaRes = await fetch(`${proxyBase}/api/streetview-meta?lat=${lat}&lng=${lng}`);
+    const meta = await metaRes.json();
+    if (meta.status !== 'OK') {
+      setStatus(`No Street View coverage there (status: ${meta.status}).`);
+      return;
+    }
+
+    setStatus('Stitching panorama for the VR sphere...');
+    const canvas = await fetchStreetViewComposite(proxyBase, meta.location.lat, meta.location.lng);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+
+    panoramas.push({
+      name: `Street View ${meta.location.lat.toFixed(4)}, ${meta.location.lng.toFixed(4)}`,
+      texture,
+    });
+    applyPanorama(panoramas.length - 1);
+    setStatus('Loaded Street View into the VR sphere (approximate stitch — expect seams).');
+  } catch (err) {
+    console.error(err);
+    setStatus('Failed to load from the proxy — check the URL and that the server is running.');
+  }
 });
 
 // ---------------------------------------------------------------------------

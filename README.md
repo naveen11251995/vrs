@@ -55,9 +55,32 @@ No build step, no environment variables, no server to keep running.
 The whole UI panel (map, buttons, status) stays visible inside the headset
 too, via the WebXR `dom-overlay` feature.
 
-## Want live Street View *inside* the headset?
-That needs a small same-origin proxy so the images arrive with the right
-CORS headers. A minimal Node/Express version of that proxy (deployable free
-on Render/Railway, separate from this static site) is available — say the
-word and it can be added back in, with `main.js` here updated to fetch
-sphere textures from that proxy's URL instead of local files.
+## Getting live Street View *inside* the headset
+
+The repo now includes `backend-proxy/` — a tiny Node/Express server whose
+only job is to re-serve Google's Street View images with CORS headers
+attached, which is what lets the browser use them as a WebGL texture
+instead of blocking them as a security risk. It's deployed separately from
+this static site (GitHub Pages can't run it).
+
+1. **Deploy the proxy** (Render, Railway, Fly.io — all have free tiers):
+   - Point the host at the `backend-proxy/` folder.
+   - Build command: `npm install`. Start command: `npm start`.
+   - In the host's dashboard, set the environment variable
+     `GOOGLE_MAPS_API_KEY` to your key (this keeps it server-side and out of
+     GitHub — a *second*, separate key from the one you paste into the
+     browser UI is fine, or reuse the same one).
+   - The host gives you a URL like `https://your-app.onrender.com`.
+
+2. **Connect it in the app**: open the "Google Maps" section, enter
+   coordinates, and paste that proxy URL into "Backend proxy URL." Click
+   **"Load this Street View into the VR sphere."**
+
+3. It stitches several Street View Static images into an approximate 360
+   texture and applies it to the sphere — expect visible seams, since this
+   is a composite of separate photos, not a true seamless panorama. The
+   trigger button now cycles through it alongside your sample/uploaded
+   photos.
+
+The 2D "Check Street View coverage" preview still works independently with
+just your browser-side key — no proxy needed for that part.
