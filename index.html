@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>VR 360° Street-View Explorer — Meta Quest 3</title>
+
+  <!-- Local Three.js Engine with CDN Fallback -->
+  <script src="three.min.js"></script>
+  <script>if (typeof THREE === 'undefined') document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>');</script>
+
+  <!-- Google Fonts: Sora & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Sora:wght@700;800;900&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --primary-blue: #007AFF;
+      --accent-gold: #FFD700;
+      --accent-cyan: #00FFFF;
+      --bg-dark: #040714;
+      --font-title: 'Sora', sans-serif;
+      --font-body: 'Inter', sans-serif;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: var(--bg-dark);
+      font-family: var(--font-body);
+      color: #FFFFFF;
+    }
+
+    #webxr-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* Header Bar Overlay */
+    #header-bar {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      right: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(4, 7, 20, 0.85);
+      border: 1.5px solid var(--accent-gold);
+      border-radius: 16px;
+      padding: 12px 24px;
+      backdrop-filter: blur(14px);
+      z-index: 10;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+    }
+
+    .brand-title {
+      font-family: var(--font-title);
+      font-size: 20px;
+      font-weight: 900;
+      color: #FFFFFF;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-title span {
+      color: var(--accent-gold);
+    }
+
+    .quest-badge {
+      background: rgba(0, 255, 255, 0.15);
+      border: 1px solid var(--accent-cyan);
+      color: var(--accent-cyan);
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    /* WebXR VR Button Styling */
+    #VRButton {
+      position: absolute !important;
+      bottom: 30px !important;
+      left: 50% !important;
+      transform: translateX(-50%) !important;
+      background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%) !important;
+      color: #040714 !important;
+      border: none !important;
+      padding: 18px 46px !important;
+      font-family: var(--font-title) !important;
+      font-size: 20px !important;
+      font-weight: 900 !important;
+      border-radius: 999px !important;
+      box-shadow: 0 10px 40px rgba(255, 215, 0, 0.6) !important;
+      cursor: pointer !important;
+      z-index: 100 !important;
+      text-transform: uppercase !important;
+      letter-spacing: 1px !important;
+    }
+
+    /* Floating Toast Instructions */
+    #instruction-toast {
+      position: absolute;
+      bottom: 110px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(4, 7, 20, 0.92);
+      border: 1.5px solid var(--accent-cyan);
+      border-radius: 18px;
+      padding: 14px 28px;
+      font-size: 16px;
+      font-weight: 600;
+      color: #FFFFFF;
+      backdrop-filter: blur(12px);
+      z-index: 90;
+      max-width: 850px;
+      text-align: center;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- WebGL / WebXR Canvas -->
+  <canvas id="webxr-canvas"></canvas>
+
+  <!-- Header Overlay -->
+  <div id="header-bar">
+    <div class="brand-title">🌐 VR 360° STREET-VIEW EXPLORER <span>| Meta Quest 3</span></div>
+    <div class="quest-badge">🗺️ LIVE GOOGLE MAPS + 360° PANORAMA</div>
+  </div>
+
+  <!-- Instruction Toast -->
+  <div id="instruction-toast">
+    <span id="toast-text">📍 Point Quest controller laser at floating 3D navigation arrows to jump between connected Street View points. Squeeze Grip to toggle Mini-Map!</span>
+  </div>
+
+  <!-- 360° STREET VIEW EXPLORER ENGINE -->
+  <script>
+    'use strict';
+
+    // ------------------------------------------------------------------
+    // 1. THREE.JS & DOLLY CAMERA RIG SETUP (WEBXR DEVICE API)
+    // ------------------------------------------------------------------
+    const canvas = document.getElementById('webxr-canvas');
+    const toastText = document.getElementById('toast-text');
+
+    const scene = new THREE.Scene();
+
+    // Dolly Group for VR Camera & Locomotion
+    const dolly = new THREE.Group();
+    dolly.position.set(0, 0, 0);
+    scene.add(dolly);
+
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 1.6, 0); // 1.6m standing eye level
+    dolly.add(camera);
+
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.xr.enabled = true; // WebXR enabled for Meta Quest Browser
+
+    // ------------------------------------------------------------------
+    // 2. WORLD LOCATIONS & STREET VIEW PANORAMA DATABASE
+    // ------------------------------------------------------------------
+    const LOCATIONS = [
+      {
+        id: "abudhabi_corniche",
+        name: "Abu Dhabi Corniche & Horizon, UAE",
+        lat: 24.4672,
+        lng: 54.3312,
+        skyColorTop: "#0055A5",
+        skyColorBottom: "#FFB03A",
+        heading: 0,
+        links: [
+          { name: "Walk North (Sheikh Zayed Mosque)", heading: 0, targetId: "sz_mosque" },
+          { name: "Walk East (Burj Khalifa Dubai)", heading: 90, targetId: "burj_khalifa" },
+          { name: "Walk West (Emirates Palace)", heading: 270, targetId: "emirates_palace" }
+        ]
+      },
+      {
+        id: "sz_mosque",
+        name: "Sheikh Zayed Grand Mosque, Abu Dhabi",
+        lat: 24.4128,
+        lng: 54.4750,
+        skyColorTop: "#0B1D3A",
+        skyColorBottom: "#D4AF37",
+        heading: 0,
+        links: [
+          { name: "Return to Corniche", heading: 180, targetId: "abudhabi_corniche" },
+          { name: "Head to Dubai Skyline", heading: 45, targetId: "burj_khalifa" }
+        ]
+      },
+      {
+        id: "burj_khalifa",
+        name: "Burj Khalifa & Downtown Dubai, UAE",
+        lat: 25.1972,
+        lng: 55.2744,
+        skyColorTop: "#04142C",
+        skyColorBottom: "#00E5FF",
+        heading: 90,
+        links: [
+          { name: "Head to Abu Dhabi", heading: 225, targetId: "abudhabi_corniche" },
+          { name: "Fly to Paris Eiffel Tower", heading: 310, targetId: "eiffel_tower" },
+          { name: "Fly to Tokyo Shibuya", heading: 70, targetId: "tokyo_shibuya" }
+        ]
+      },
+      {
+        id: "emirates_palace",
+        name: "Emirates Palace Auditorium, Abu Dhabi",
+        lat: 24.4617,
+        lng: 54.3173,
+        skyColorTop: "#1A0933",
+        skyColorBottom: "#FF8C00",
+        heading: 270,
+        links: [
+          { name: "Back to Corniche Promenade", heading: 90, targetId: "abudhabi_corniche" }
+        ]
+      },
+      {
+        id: "eiffel_tower",
+        name: "Eiffel Tower Champ de Mars, Paris, France",
+        lat: 48.8584,
+        lng: 2.2945,
+        skyColorTop: "#0B2545",
+        skyColorBottom: "#F4A261",
+        heading: 310,
+        links: [
+          { name: "Fly to Times Square NYC", heading: 260, targetId: "times_square" },
+          { name: "Fly to Dubai", heading: 130, targetId: "burj_khalifa" }
+        ]
+      },
+      {
+        id: "times_square",
+        name: "Times Square 42nd St, New York, USA",
+        lat: 40.7580,
+        lng: -73.9855,
+        skyColorTop: "#050C1A",
+        skyColorBottom: "#FF007F",
+        heading: 260,
+        links: [
+          { name: "Fly to Paris", heading: 80, targetId: "eiffel_tower" },
+          { name: "Fly to Grand Canyon", heading: 240, targetId: "grand_canyon" }
+        ]
+      },
+      {
+        id: "tokyo_shibuya",
+        name: "Shibuya Crossing & Hachiko, Tokyo, Japan",
+        lat: 35.6595,
+        lng: 139.7004,
+        skyColorTop: "#0A0E2A",
+        skyColorBottom: "#00FFFF",
+        heading: 70,
+        links: [
+          { name: "Fly to Dubai", heading: 250, targetId: "burj_khalifa" }
+        ]
+      },
+      {
+        id: "grand_canyon",
+        name: "Grand Canyon Mather Point, Arizona, USA",
+        lat: 36.0572,
+        lng: -112.1438,
+        skyColorTop: "#1A0B2E",
+        skyColorBottom: "#E76F51",
+        heading: 240,
+        links: [
+          { name: "Fly to Times Square NYC", heading: 60, targetId: "times_square" }
+        ]
+      }
+    ];
+
+    let currentLocationIndex = 0;
+
+    // ------------------------------------------------------------------
+    // 3. EQUIRECTANGULAR 360° PANORAMA SPHERE RENDERER
+    // ------------------------------------------------------------------
+    let skyDomeMesh;
+
+    function generateEquirectangularTexture(location) {
+      const pCanvas = document.createElement('canvas');
+      pCanvas.width = 4096;
+      pCanvas.height = 2048;
+      const ctx = pCanvas.getContext('2d');
+
+      // 360° Sky & Horizon Gradient
+      const skyGrad = ctx.createLinearGradient(0, 0, 0, 2048);
+      skyGrad.addColorStop(0.0, location.skyColorTop);
+      skyGrad.addColorStop(0.48, location.skyColorBottom);
+      skyGrad.addColorStop(0.54, '#0A122A');
+      skyGrad.addColorStop(1.0, '#040714');
+      ctx.fillStyle = skyGrad;
+      ctx.fillRect(0, 0, 4096, 2048);
+
+      // Starfield in upper sky
+      ctx.fillStyle = '#FFFFFF';
+      for (let i = 0; i < 400; i++) {
+        const sx = Math.random() * 4096;
+        const sy = Math.random() * 950;
+        const sr = Math.random() * 2 + 0.5;
+        ctx.globalAlpha = Math.random() * 0.8 + 0.2;
+        ctx.beginPath();
+        ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1.0;
+
+      // Sun Glow
+      const sunX = 2048 + Math.sin((location.heading * Math.PI) / 180) * 1000;
+      const sunGrad = ctx.createRadialGradient(sunX, 1000, 20, sunX, 1000, 500);
+      sunGrad.addColorStop(0, 'rgba(255, 255, 230, 0.95)');
+      sunGrad.addColorStop(0.3, 'rgba(255, 215, 0, 0.5)');
+      sunGrad.addColorStop(1, 'rgba(255, 215, 0, 0)');
+      ctx.fillStyle = sunGrad;
+      ctx.beginPath();
+      ctx.arc(sunX, 1000, 500, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 360° Street View Landmark Silhouettes
+      ctx.fillStyle = '#050D20';
+      for (let x = 0; x < 4096; x += 50 + Math.random() * 80) {
+        const bW = 40 + Math.random() * 70;
+        const bH = 150 + Math.random() * 350;
+        ctx.fillRect(x, 1080 - bH, bW, bH);
+
+        // Lit Windows
+        ctx.fillStyle = Math.random() > 0.4 ? 'rgba(0, 255, 255, 0.7)' : 'rgba(255, 215, 0, 0.7)';
+        for (let wy = 1080 - bH + 20; wy < 1060; wy += 30) {
+          for (let wx = x + 8; wx < x + bW - 10; wx += 16) {
+            if (Math.random() > 0.3) ctx.fillRect(wx, wy, 7, 14);
+          }
+        }
+        ctx.fillStyle = '#050D20';
+      }
+
+      // Compass Grid Lines on Ground
+      ctx.strokeStyle = 'rgba(0, 255, 255, 0.2)';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(2048, 1600, 300, 0, Math.PI * 2);
+      ctx.stroke();
+
+      return new THREE.CanvasTexture(pCanvas);
+    }
+
+    function createSkyDome() {
+      const loc = LOCATIONS[currentLocationIndex];
+      const texture = generateEquirectangularTexture(loc);
+      const skyGeo = new THREE.SphereGeometry(200, 60, 40);
+      const skyMat = new THREE.MeshBasicMaterial({ map: texture, side: THREE.BackSide });
+      skyDomeMesh = new THREE.Mesh(skyGeo, skyMat);
+      scene.add(skyDomeMesh);
+    }
+    createSkyDome();
+
+    // ------------------------------------------------------------------
+    // 4. STREET VIEW-STYLE FLOATING 3D NAVIGATION HOTSPOTS / ARROWS
+    // ------------------------------------------------------------------
+    const hotspotGroup = new THREE.Group();
+    scene.add(hotspotGroup);
+    const hotspotObjects = [];
+
+    function renderHotspots() {
+      // Clear previous hotspots
+      while (hotspotGroup.children.length > 0) {
+        const obj = hotspotGroup.children[0];
+        hotspotGroup.remove(obj);
+      }
+      hotspotObjects.length = 0;
+
+      const loc = LOCATIONS[currentLocationIndex];
+
+      loc.links.forEach((link) => {
+        const rad = (link.heading * Math.PI) / 180;
+        const dist = 5.0; // 5 meters away in VR space
+        const hx = Math.sin(rad) * dist;
+        const hz = -Math.cos(rad) * dist;
+
+        const hContainer = new THREE.Group();
+        hContainer.position.set(hx, 1.2, hz);
+        hContainer.lookAt(0, 1.2, 0); // Face towards user standing at origin
+
+        // Floating Arrow Ring
+        const ringMesh = new THREE.Mesh(
+          new THREE.RingGeometry(0.35, 0.45, 32),
+          new THREE.MeshBasicMaterial({ color: 0x00FFFF, side: THREE.DoubleSide })
+        );
+        ringMesh.rotation.x = Math.PI / 2;
+        hContainer.add(ringMesh);
+
+        // Glowing Pointer Arrow
+        const arrowGeo = new THREE.ConeGeometry(0.22, 0.6, 16);
+        const arrowMat = new THREE.MeshStandardMaterial({ color: 0xFFD700, metalness: 0.8, roughness: 0.2 });
+        const arrowMesh = new THREE.Mesh(arrowGeo, arrowMat);
+        arrowMesh.rotation.x = -Math.PI / 2;
+        arrowMesh.position.z = -0.2;
+        hContainer.add(arrowMesh);
+
+        // 3D Canvas Label Text Box
+        const lCanvas = document.createElement('canvas');
+        lCanvas.width = 512;
+        lCanvas.height = 128;
+        const lCtx = lCanvas.getContext('2d');
+        lCtx.fillStyle = 'rgba(4, 7, 20, 0.9)';
+        lCtx.fillRect(0, 0, 512, 128);
+        lCtx.strokeStyle = '#00FFFF';
+        lCtx.lineWidth = 6;
+        lCtx.strokeRect(4, 4, 504, 120);
+
+        lCtx.fillStyle = '#FFD700';
+        lCtx.font = 'bold 32px Sora, sans-serif';
+        lCtx.textAlign = 'center';
+        lCtx.fillText(`➔ ${link.name}`, 256, 75);
+
+        const lTexture = new THREE.CanvasTexture(lCanvas);
+        const labelMesh = new THREE.Mesh(
+          new THREE.PlaneGeometry(1.4, 0.35),
+          new THREE.MeshBasicMaterial({ map: lTexture, side: THREE.DoubleSide })
+        );
+        labelMesh.position.y = 0.65;
+        hContainer.add(labelMesh);
+
+        hContainer.userData = { targetId: link.targetId, linkName: link.name };
+        hotspotGroup.add(hContainer);
+        hotspotObjects.push(ringMesh); // Raycast target
+        ringMesh.userData = { parentGroup: hContainer };
+      });
+    }
+    renderHotspots();
+
+    // ------------------------------------------------------------------
+    // 5. LIVE FLOATING 2D MINI-MAP OVERLAY (GOOGLE MAPS STYLE)
+    // ------------------------------------------------------------------
+    const miniMapGroup = new THREE.Group();
+    miniMapGroup.position.set(-1.8, 1.8, -2.5); // Floating to left side of VR view
+    scene.add(miniMapGroup);
+
+    const miniMapCanvas = document.createElement('canvas');
+    miniMapCanvas.width = 800;
+    miniMapCanvas.height = 600;
+    const mCtx = miniMapCanvas.getContext('2d');
+
+    const miniMapTexture = new THREE.CanvasTexture(miniMapCanvas);
+    const miniMapMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.6, 1.2),
+      new THREE.MeshBasicMaterial({ map: miniMapTexture, side: THREE.DoubleSide })
+    );
+    miniMapGroup.add(miniMapMesh);
+
+    const miniMapFrame = new THREE.Mesh(
+      new THREE.BoxGeometry(1.66, 1.26, 0.04),
+      new THREE.MeshStandardMaterial({ color: 0x040714, metalness: 0.9, roughness: 0.1 })
+    );
+    miniMapFrame.position.z = -0.03;
+    miniMapGroup.add(miniMapFrame);
+
+    const miniMapBorder = new THREE.Mesh(
+      new THREE.BoxGeometry(1.70, 1.30, 0.02),
+      new THREE.MeshBasicMaterial({ color: 0xFFD700 })
+    );
+    miniMapBorder.position.z = -0.04;
+    miniMapGroup.add(miniMapBorder);
+
+    function renderLiveMiniMap() {
+      const loc = LOCATIONS[currentLocationIndex];
+
+      // Map Canvas Background
+      mCtx.fillStyle = '#061329';
+      mCtx.fillRect(0, 0, 800, 600);
+
+      // Grid Lines (Map Grid)
+      mCtx.strokeStyle = 'rgba(0, 255, 255, 0.15)';
+      mCtx.lineWidth = 1;
+      for (let x = 0; x < 800; x += 50) {
+        mCtx.beginPath(); mCtx.moveTo(x, 0); mCtx.lineTo(x, 600); mCtx.stroke();
+      }
+      for (let y = 0; y < 600; y += 50) {
+        mCtx.beginPath(); mCtx.moveTo(0, y); mCtx.lineTo(800, y); mCtx.stroke();
+      }
+
+      // Map Title Header
+      mCtx.fillStyle = '#040714';
+      mCtx.fillRect(0, 0, 800, 70);
+      mCtx.fillStyle = '#FFD700';
+      mCtx.font = 'bold 28px Sora, sans-serif';
+      mCtx.fillText('🗺️ LIVE GOOGLE MAPS TRACKER', 30, 48);
+
+      // Location Marker & Info Card
+      mCtx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+      mCtx.strokeStyle = '#00FFFF';
+      mCtx.lineWidth = 2;
+      mCtx.beginPath();
+      mCtx.roundRect(30, 90, 740, 100, 14);
+      mCtx.fill();
+      mCtx.stroke();
+
+      mCtx.fillStyle = '#FFFFFF';
+      mCtx.font = 'bold 26px Sora, sans-serif';
+      mCtx.fillText(`📍 ${loc.name}`, 50, 132);
+
+      mCtx.fillStyle = '#00FFFF';
+      mCtx.font = '22px Inter, sans-serif';
+      mCtx.fillText(`Lat: ${loc.lat.toFixed(4)}° N  |  Lng: ${loc.lng.toFixed(4)}° E`, 50, 170);
+
+      // Radar Pulse Circle Marker (Centered on Map)
+      const cx = 400;
+      const cy = 380;
+
+      mCtx.fillStyle = 'rgba(255, 215, 0, 0.25)';
+      mCtx.beginPath();
+      mCtx.arc(cx, cy, 70, 0, Math.PI * 2);
+      mCtx.fill();
+
+      mCtx.fillStyle = '#EA4335';
+      mCtx.beginPath();
+      mCtx.arc(cx, cy, 18, 0, Math.PI * 2);
+      mCtx.fill();
+
+      mCtx.fillStyle = '#FFFFFF';
+      mCtx.beginPath();
+      mCtx.arc(cx, cy, 6, 0, Math.PI * 2);
+      mCtx.fill();
+
+      // Heading Direction Beam
+      const rad = (loc.heading * Math.PI) / 180;
+      const hx = cx + Math.sin(rad) * 90;
+      const hy = cy - Math.cos(rad) * 90;
+
+      mCtx.strokeStyle = '#FFD700';
+      mCtx.lineWidth = 4;
+      mCtx.beginPath();
+      mCtx.moveTo(cx, cy);
+      mCtx.lineTo(hx, hy);
+      mCtx.stroke();
+
+      miniMapTexture.needsUpdate = true;
+    }
+    renderLiveMiniMap();
+
+    // Toggle Mini-Map visibility with Grip Button
+    let miniMapVisible = true;
+    function toggleMiniMap() {
+      miniMapVisible = !miniMapVisible;
+      miniMapGroup.visible = miniMapVisible;
+    }
+
+    // ------------------------------------------------------------------
+    // 6. WORLD LANDMARKS SELECTOR / TELEPORTation PANEL
+    // ------------------------------------------------------------------
+    const selectorGroup = new THREE.Group();
+    selectorGroup.position.set(1.8, 1.8, -2.5); // Floating to right side of VR view
+    scene.add(selectorGroup);
+
+    const selCanvas = document.createElement('canvas');
+    selCanvas.width = 800;
+    selCanvas.height = 600;
+    const sCtx = selCanvas.getContext('2d');
+
+    const selTexture = new THREE.CanvasTexture(selCanvas);
+    const selMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.6, 1.2),
+      new THREE.MeshBasicMaterial({ map: selTexture, side: THREE.DoubleSide })
+    );
+    selectorGroup.add(selMesh);
+
+    const selFrame = new THREE.Mesh(
+      new THREE.BoxGeometry(1.66, 1.26, 0.04),
+      new THREE.MeshStandardMaterial({ color: 0x040714, metalness: 0.9, roughness: 0.1 })
+    );
+    selFrame.position.z = -0.03;
+    selectorGroup.add(selFrame);
+
+    const selBorder = new THREE.Mesh(
+      new THREE.BoxGeometry(1.70, 1.30, 0.02),
+      new THREE.MeshBasicMaterial({ color: 0xFFD700 })
+    );
+    selBorder.position.z = -0.04;
+    selectorGroup.add(selBorder);
+
+    function renderLandmarkSelector() {
+      sCtx.fillStyle = '#061329';
+      sCtx.fillRect(0, 0, 800, 600);
+
+      sCtx.fillStyle = '#040714';
+      sCtx.fillRect(0, 0, 800, 70);
+      sCtx.fillStyle = '#FFD700';
+      sCtx.font = 'bold 28px Sora, sans-serif';
+      sCtx.fillText('🌍 TELEPORT LANDMARKS SELECTOR', 30, 48);
+
+      LOCATIONS.forEach((loc, idx) => {
+        const iy = 90 + idx * 60;
+        if (iy < 570) {
+          const isCurrent = (idx === currentLocationIndex);
+          sCtx.fillStyle = isCurrent ? 'rgba(0, 255, 255, 0.25)' : 'rgba(255, 255, 255, 0.08)';
+          sCtx.strokeStyle = isCurrent ? '#00FFFF' : '#FFD700';
+          sCtx.lineWidth = 2;
+          sCtx.beginPath();
+          sCtx.roundRect(30, iy, 740, 50, 10);
+          sCtx.fill();
+          sCtx.stroke();
+
+          sCtx.fillStyle = isCurrent ? '#00FFFF' : '#FFFFFF';
+          sCtx.font = 'bold 22px Sora, sans-serif';
+          sCtx.fillText(`${isCurrent ? '📍 [ACTIVE] ' : '✈️ '}${loc.name}`, 50, iy + 33);
+        }
+      });
+
+      selTexture.needsUpdate = true;
+    }
+    renderLandmarkSelector();
+
+    // ------------------------------------------------------------------
+    // 7. WEB AUDIO SPATIAL SOUND EFFECTS
+    // ------------------------------------------------------------------
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    function playSound(type) {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      if (type === 'jump') {
+        osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(1400, audioCtx.currentTime + 0.3);
+        gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.3);
+      } else if (type === 'toggle') {
+        osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(900, audioCtx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.1);
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // 8. TRANSITION TO NEW PANORAMA (SMOOTH FADE & POSITION UPDATE)
+    // ------------------------------------------------------------------
+    function jumpToPanorama(targetId) {
+      const targetIdx = LOCATIONS.findIndex(l => l.id === targetId);
+      if (targetIdx === -1) return;
+
+      currentLocationIndex = targetIdx;
+      const loc = LOCATIONS[currentLocationIndex];
+
+      playSound('jump');
+
+      // Update Skybox Texture
+      skyDomeMesh.material.map = generateEquirectangularTexture(loc);
+      skyDomeMesh.material.needsUpdate = true;
+
+      // Update Hotspots, Mini-Map, and Landmark Selector
+      renderHotspots();
+      renderLiveMiniMap();
+      renderLandmarkSelector();
+
+      if (toastText) {
+        toastText.textContent = `📍 Position Updated: ${loc.name} (Lat: ${loc.lat.toFixed(4)}°, Lng: ${loc.lng.toFixed(4)}°)`;
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // 9. WEBXR VR BUTTON LAUNCHER
+    // ------------------------------------------------------------------
+    function createVRButton() {
+      const button = document.createElement('button');
+      button.id = 'VRButton';
+
+      if ('xr' in navigator) {
+        navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+          if (supported) {
+            button.textContent = '🥽 ENTER 360° STREET VIEW VR';
+            button.onclick = () => {
+              if (audioCtx.state === 'suspended') audioCtx.resume();
+
+              navigator.xr.requestSession('immersive-vr', {
+                requiredFeatures: ['local-floor'],
+                optionalFeatures: ['bounded-floor', 'hand-tracking']
+              }).then((session) => {
+                renderer.xr.setSession(session);
+              });
+            };
+          } else {
+            button.textContent = 'ENTER 3D SIMULATOR (WASD TO MOVE)';
+          }
+        });
+      } else {
+        button.textContent = 'ENTER 3D SIMULATION';
+      }
+
+      document.body.appendChild(button);
+    }
+    createVRButton();
+
+    // ------------------------------------------------------------------
+    // 10. QUEST 3 CONTROLLERS, RAYCASTING & GRIP TOGGLE
+    // ------------------------------------------------------------------
+    const controller1 = renderer.xr.getController(0);
+    dolly.add(controller1);
+
+    const controller2 = renderer.xr.getController(1);
+    dolly.add(controller2);
+
+    const laserGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(0, 0, -8)
+    ]);
+    const laserMat = new THREE.LineBasicMaterial({ color: 0x00FFFF });
+
+    controller1.add(new THREE.Line(laserGeo, laserMat));
+    controller2.add(new THREE.Line(laserGeo, laserMat));
+
+    const raycaster = new THREE.Raycaster();
+    const tempMatrix = new THREE.Matrix4();
+    const mouse = new THREE.Vector2();
+
+    // Trigger Select Handler
+    function onControllerSelect(controller) {
+      tempMatrix.identity().extractRotation(controller.matrixWorld);
+      raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+      raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+
+      const intersects = raycaster.intersectObjects(hotspotObjects);
+      if (intersects.length > 0) {
+        const hitObj = intersects[0].object;
+        if (hitObj && hitObj.userData && hitObj.userData.parentGroup) {
+          const targetId = hitObj.userData.parentGroup.userData.targetId;
+          jumpToPanorama(targetId);
+        }
+      }
+    }
+
+    controller1.addEventListener('selectstart', () => onControllerSelect(controller1));
+    controller2.addEventListener('selectstart', () => onControllerSelect(controller2));
+
+    // Grip Button Event (Toggle Mini-Map)
+    controller1.addEventListener('squeeze', () => { playSound('toggle'); toggleMiniMap(); });
+    controller2.addEventListener('squeeze', () => { playSound('toggle'); toggleMiniMap(); });
+
+    // Thumbstick Locomotion (Smooth Walking & Snap Turning)
+    function updateLocomotion() {
+      const session = renderer.xr.getSession();
+      if (!session) return;
+
+      for (const source of session.inputSources) {
+        if (source.gamepad && source.gamepad.axes) {
+          const axes = source.gamepad.axes;
+          if (axes.length >= 4) {
+            const moveX = axes[0];
+            const moveZ = axes[1];
+
+            if (Math.abs(moveX) > 0.1 || Math.abs(moveZ) > 0.1) {
+              const moveSpeed = 0.05;
+              const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+              euler.setFromQuaternion(camera.quaternion);
+
+              const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), euler.y);
+              const right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), euler.y);
+
+              dolly.position.addScaledVector(forward, -moveZ * moveSpeed);
+              dolly.position.addScaledVector(right, moveX * moveSpeed);
+              dolly.position.y = 0;
+            }
+
+            const turnX = axes[2];
+            if (Math.abs(turnX) > 0.6) {
+              dolly.rotation.y -= Math.sign(turnX) * 0.04;
+            }
+          }
+        }
+      }
+    }
+
+    // Keyboard Locomotion Fallback for Desktop
+    const keys = {};
+    window.addEventListener('keydown', (e) => { keys[e.code] = true; });
+    window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+    function updateKeyboardLocomotion() {
+      if (renderer.xr.isPresenting) return;
+
+      const speed = 0.08;
+      if (keys['KeyW'] || keys['ArrowUp']) dolly.translateZ(-speed);
+      if (keys['KeyS'] || keys['ArrowDown']) dolly.translateZ(speed);
+      if (keys['KeyA'] || keys['ArrowLeft']) dolly.translateX(-speed);
+      if (keys['KeyD'] || keys['ArrowRight']) dolly.translateX(speed);
+      if (keys['KeyQ']) dolly.rotation.y += 0.03;
+      if (keys['KeyE']) dolly.rotation.y -= 0.03;
+      dolly.position.y = 0;
+    }
+
+    // Pointer click fallback for desktop testing
+    window.addEventListener('pointerdown', (e) => {
+      if (e.target.id === 'VRButton') return;
+
+      mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+
+      const intersects = raycaster.intersectObjects(hotspotObjects);
+      if (intersects.length > 0) {
+        const hitObj = intersects[0].object;
+        if (hitObj && hitObj.userData && hitObj.userData.parentGroup) {
+          const targetId = hitObj.userData.parentGroup.userData.targetId;
+          jumpToPanorama(targetId);
+        }
+      }
+    });
+
+    // ------------------------------------------------------------------
+    // 11. MAIN RENDER LOOP
+    // ------------------------------------------------------------------
+    const clock = new THREE.Clock();
+
+    function animateLoop() {
+      const elapsed = clock.getElapsedTime();
+
+      updateLocomotion();
+      updateKeyboardLocomotion();
+
+      // Animate floating hotspots
+      hotspotGroup.position.y = Math.sin(elapsed * 2) * 0.08;
+
+      renderer.render(scene, camera);
+    }
+
+    renderer.setAnimationLoop(animateLoop);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
