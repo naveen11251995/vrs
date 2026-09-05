@@ -1,48 +1,63 @@
-# 🥽 VR 360° Street-View Explorer (Meta Quest 3 + Google Maps)
+# WebXR 360° Explorer — static, GitHub Pages ready
 
-An immersive WebXR application designed for the Meta Quest Browser that lets users explore real-world locations as full 360° panoramas with Google Street View-style navigation, live 2D mini-map tracking overlay, landmark teleporter, and 6DoF VR controller interactions.
+A pure static WebXR site (no backend, no build step) you can push straight
+to a GitHub repo and serve with GitHub Pages. Works out of the box with a
+bundled sample 360 photo, lets you upload your own, and includes an
+*optional* client-side Google Maps panel for picking real-world coordinates
+and previewing Street View coverage.
 
----
+## Why this version has no backend
+GitHub Pages only serves static files — it can't run a server. That's fine
+for the 360 viewer itself (photos load directly from the repo or from your
+local file upload, both same-origin, no issues). It does mean one thing
+**can't** work here: pulling live Street View imagery into the WebXR sphere.
+Google's Street View/Static Maps image endpoints don't send the CORS headers
+WebGL requires to use an image as a texture — that only works when a
+same-origin server proxies the image for you (see "Want live Street View in
+the headset?" below).
 
-## ✨ Features
+What *does* work fully statically:
+- The WebXR 360 sphere, with the bundled sample photo and any photo you
+  upload (drag-and-drop your own equirectangular JPG/PNG).
+- An interactive, clickable Google Map for picking coordinates.
+- A 2D Street View coverage check and preview image shown in the UI panel
+  (not in the headset view) — good for confirming a spot has coverage
+  before you go photograph it yourself for the VR sphere.
 
-- **🌐 Immersive 360° Panorama Sphere**: Equirectangular textures rendered on an inverted 180m skydome.
-- **🧭 Street View-Style Hotspot Navigation**: 3D floating directional arrows rendered at exact cardinal/heading angles with smooth camera transitions and spatial audio feedback.
-- **🗺️ Live 2D Mini-Map Panel**: Floating HUD overlay in VR tracking real-time latitude/longitude, map grid, pin marker, and yellow view directional cone.
-- **📍 Landmark Teleporter**: Instant teleportation to iconic world destinations:
-  - 🇦🇪 *Abu Dhabi Corniche & Sheikh Zayed Grand Mosque*
-  - 🇦🇪 *Burj Khalifa & Downtown Dubai*
-  - 🇦🇪 *Emirates Palace Abu Dhabi*
-  - 🇫🇷 *Eiffel Tower, Paris*
-  - 🇺🇸 *Times Square, NYC & Grand Canyon*
-  - 🇯🇵 *Shibuya Crossing, Tokyo*
-- **🎮 Full Meta Quest Controller Support**:
-  - **Cyan Laser Pointer + Trigger**: Select navigation arrows or teleport landmarks.
-  - **Left Thumbstick**: Smooth locomotion / translation movement in 3D space.
-  - **Right Thumbstick**: Snap rotation (45° view angle increments).
-  - **Grip Button**: Toggle mini-map HUD visibility.
-- **🖼️ Custom Photo Upload Mode**: Drag-and-drop or upload custom equirectangular panoramas with manual hotspot link definitions.
+## Deploy to GitHub Pages
 
----
+1. Push this folder to a GitHub repo (root of the repo, or a `/docs` folder
+   — either works, just match your Pages settings).
+2. In the repo: **Settings → Pages → Source**, pick the branch/folder this
+   code lives in, save.
+3. GitHub gives you a `https://<username>.github.io/<repo>/` URL —
+   already HTTPS, which is exactly what WebXR requires. Open it in the
+   Quest Browser and click **Enter VR**.
 
-## 🛠️ Tech Stack
+No build step, no environment variables, no server to keep running.
 
-- **3D / WebXR Engine**: Three.js (r128) + WebXR Device API
-- **Maps Platform**: Google Maps JavaScript API & StreetViewService proxy
-- **Backend**: Express.js proxy server (`server.js`)
-- **Hosting**: GitHub Pages (HTTPS mandatory for WebXR context)
+## Using the optional Google Maps panel
+1. Get a Google Maps API key in Google Cloud Console, enable the **Maps
+   JavaScript API** and **Street View Static API**.
+2. **Restrict the key** (HTTP referrers) to your `github.io` URL — since
+   this is a static site, the key lives in the browser, so restriction is
+   your only protection against misuse.
+3. Paste the key into the "Your Google Maps API key" field in the app. It's
+   only kept in that page load — nothing is saved to the repo.
 
----
+## Controls (in VR)
+| Input | Action |
+|---|---|
+| Trigger | Cycle to the next loaded photo |
+| Thumbstick left/right | Snap-turn 30° |
+| Grip | Recenter your view forward |
 
-## 🚀 Quick Deployment to GitHub Pages
+The whole UI panel (map, buttons, status) stays visible inside the headset
+too, via the WebXR `dom-overlay` feature.
 
-1. Create a repository on GitHub (e.g. `street-view-vr`).
-2. Upload all files from this directory:
-   - `index.html`
-   - `three.min.js`
-   - `server.js`
-   - `.nojekyll`
-   - `README.md`
-3. Go to **Settings > Pages** in your GitHub repository.
-4. Set the **Source** branch to `main` and folder to `/ (root)`.
-5. Open `https://<your-username>.github.io/<repo-name>/` in your **Meta Quest 3 Browser** and click **ENTER VR**.
+## Want live Street View *inside* the headset?
+That needs a small same-origin proxy so the images arrive with the right
+CORS headers. A minimal Node/Express version of that proxy (deployable free
+on Render/Railway, separate from this static site) is available — say the
+word and it can be added back in, with `main.js` here updated to fetch
+sphere textures from that proxy's URL instead of local files.
